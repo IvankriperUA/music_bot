@@ -5,6 +5,9 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
 from aiohttp import web
+import static_ffmpeg
+static_ffmpeg.add_paths()
+
 
 # Отримуємо токен із секретів Render
 API_TOKEN = os.getenv("BOT_TOKEN")
