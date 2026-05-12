@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import FSInputFile
 
 # Токен
-API_TOKEN = TOKEN
+API_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
