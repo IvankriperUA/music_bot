@@ -4,13 +4,34 @@ import glob
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
+from aiohttp import web
 
-# Токен
+# Отримуємо токен із секретів Render
 API_TOKEN = os.getenv("BOT_TOKEN")
+
+if not API_TOKEN:
+    print("Error: BOT_TOKEN variable is not set!")
+    exit(1)
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+# --- Веб-сервер для Render (щоб не було помилки "No open ports detected") ---
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render автоматично надає порт у змінній PORT
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    print(f"Web server started on port {port}")
+    await site.start()
+
+# --- Логіка бота ---
 def cleanup():
     for file in glob.glob("*.mp3"):
         try:
@@ -20,11 +41,9 @@ def cleanup():
 
 def download_track(query):
     cleanup()
-
-
     print(f"Downloading track: {query}")
 
-
+    # yt-dlp команда
     cmd = (
         f'yt-dlp "ytsearch1:{query}"'
         f' --extract-audio'
@@ -34,61 +53,50 @@ def download_track(query):
     )
 
     exit_code = os.system(cmd)
-
     if exit_code != 0:
-        print(f"Error downloading track: {query}")
         return None
 
-
     files = glob.glob("*.mp3")
-
-
-    if files:
-        print(f"Track downloaded successfully: {files[0]}")
-        return files[0]
-    return None
+    return files[0] if files else None
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
-    await message.answer("Привіт! Введи назву треку, який хочеш завантажити.")
-
+    await message.answer("Привіт! Напиши назву пісні, і я спробую її знайти.")
 
 @dp.message()
 async def handle_message(message: types.Message):
     if not message.text or message.text.startswith("/"):
         return  
 
-    status_message = await message.answer(f"Завантаження  {message.text}...")
+    status_message = await message.answer(f"⏳ Шукаю та завантажую: {message.text}...")
 
     loop = asyncio.get_event_loop()
-
     file_path = await loop.run_in_executor(None, download_track, message.text)
-
 
     try:
         if file_path:
-            await status_message.edit_text(f"Трек завантажено: {os.path.basename(file_path)}")
-
+            await status_message.edit_text(f"✅ Трек знайдено! Надсилаю...")
             audio = FSInputFile(file_path)
-
-            await message.answer_audio(audio, caption=f"Ось твій трек: {os.path.basename(file_path)}")
-
+            await message.answer_audio(audio, caption=f"🎵 {os.path.basename(file_path)}")
             os.remove(file_path)
-
             await status_message.delete()
         else:
-            await status_message.edit_text("Не вдалося завантажити трек. Спробуйте ще раз.")
-
+            await status_message.edit_text("❌ Не вдалося знайти або завантажити трек.")
     except Exception as e:
         print(f"Error sending track: {e}")
+        await status_message.edit_text("⚠️ Сталася помилка під час відправки.")
 
-        await status_message.edit_text("Сталася помилка при відправці треку. Спробуйте ще раз.")
-
-
+# --- Головна функція запуску ---
 async def main():
-    print("Starting bot...")
-    await dp.start_polling(bot)           
-
+    print("Starting bot and web server...")
+    # Запускаємо і бота, і веб-сервер одночасно
+    await asyncio.gather(
+        start_web_server(),
+        dp.start_polling(bot)
+    )
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
